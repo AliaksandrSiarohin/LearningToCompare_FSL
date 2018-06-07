@@ -19,9 +19,9 @@ import argparse
 import random
 
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
-parser.add_argument("-f","--feature_dim",type = int, default = 64)
-parser.add_argument("-r","--relation_dim",type = int, default = 8)
-parser.add_argument("-w","--class_num",type = int, default = 5)
+parser.add_argument("-f","--feature_dim",type = int, default=64)
+parser.add_argument("-r","--relation_dim",type = int, default=8)
+parser.add_argument("-w","--class_num",type = int, default=5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 19)
 parser.add_argument("-e","--episode",type = int, default= 1000000)
@@ -29,6 +29,9 @@ parser.add_argument("-t","--test_episode", type = int, default = 1000)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
+parser.add_argument("-a", "--attention", type=int, default=0)
+
+
 args = parser.parse_args()
 
 
@@ -43,6 +46,52 @@ TEST_EPISODE = args.test_episode
 LEARNING_RATE = args.learning_rate
 GPU = args.gpu
 HIDDEN_UNIT = args.hidden_unit
+
+
+class AttentionModule(nn.Module):
+    def __int__(self, in_filters=64, emb_filters=64):
+        super(AttentionModule, self).__init__()
+
+        self.theta = nn.Conv2d(in_filters, emb_filters, kernel_size=1)
+        self.g = nn.Conv2d(in_filters, in_filters, kernel_size=1)
+        self.phi = nn.Conv2d(in_filters, emb_filters, kernel_size=1)
+
+    def forward(self, sample, batch):
+        #Sample bs:in_filters:H_s:W_s
+        #Batch bs:in_filters:H_b:W_b
+
+        final_shape = batch.shape
+
+        phi = self.phi(sample)
+        # bs:emb_filters:H_s:W_s
+        theta = self.theta(batch)
+        # bs:emb_filters:H_b:W_b
+        g = self.g(sample)
+        # bs:in_filter:H_s:W_s
+
+        phi = phi.view(phi.shape[0], phi.shape[1], -1)
+        # bs:emb_filters:H_s*W_s
+        theta = theta.view(theta.shape[0], theta.shape[1], -1)
+        # bs:emb_filters:H_b*W_b
+        g = g.view(g.shape[0], g.shape[1], -1)
+
+        theta = theta.permute(0, 2, 1)
+        # bs:H_b*W_b:emb_filters
+
+        f = torch.matmul(theta, phi)
+        # bs:H_b*W_b:H_s*W_s
+        f = F.softmax(f, dim=1)
+        # bs:H_b*W_b:H_s*W_s
+
+        g = g.permute(0, 2, 1)
+        # bs:H_s*W_s:in_filter
+
+        out = torch.matmul(f, g)
+        # bs:H_b*W_b:in_filter
+        out = out.permute(0, 2, 1)
+        out = out.view(*final_shape)
+
+        return out
 
 class CNNEncoder(nn.Module):
     """docstring for ClassName"""
@@ -126,17 +175,25 @@ def main():
 
     feature_encoder = CNNEncoder()
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
+    attention_module = AttentionModule(FEATURE_DIM)
 
     feature_encoder.apply(weights_init)
     relation_network.apply(weights_init)
+    attention_module.apply(weights_init)
 
     feature_encoder.cuda(GPU)
     relation_network.cuda(GPU)
+    attention_module.cuda(GPU)
+
 
     feature_encoder_optim = torch.optim.Adam(feature_encoder.parameters(),lr=LEARNING_RATE)
     feature_encoder_scheduler = StepLR(feature_encoder_optim,step_size=100000,gamma=0.5)
+
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
+
+    attention_module_optim = torch.optim.Adam(attention_module.parameters(),lr=LEARNING_RATE)
+    attention_module_scheduler = StepLR(attention_module_optim,step_size=100000,gamma=0.5)
 
     if os.path.exists(str("./models/omniglot_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
         feature_encoder.load_state_dict(torch.load(str("./models/omniglot_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
@@ -154,6 +211,7 @@ def main():
 
         feature_encoder_scheduler.step(episode)
         relation_network_scheduler.step(episode)
+        attention_module_scheduler.step(episode)
 
         # init dataset
         # sample_dataloader is to obtain previous samples for compare
@@ -177,6 +235,12 @@ def main():
         # to form a 100x128 matrix for relation network
         sample_features_ext = sample_features.unsqueeze(0).repeat(BATCH_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
         batch_features_ext = batch_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
+
+        batch_features_grid = batch_features_ext.view(-1, FEATURE_DIM, 5, 5)
+        samples_features_grid = sample_features_ext.view(-1, FEATURE_DIM, 5, 5)
+
+        if attention_module:
+            sample_features_ext = attention_module(samples_features_grid, batch_features_grid)
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
 
         relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,5,5)
@@ -191,6 +255,7 @@ def main():
 
         feature_encoder.zero_grad()
         relation_network.zero_grad()
+        attention_module.zero_grad()
 
         loss.backward()
 
@@ -199,6 +264,7 @@ def main():
 
         feature_encoder_optim.step()
         relation_network_optim.step()
+        attention_module_optim.step()
 
         if (episode+1)%100 == 0:
                 print("episode:",episode+1,"loss",loss.data[0])
