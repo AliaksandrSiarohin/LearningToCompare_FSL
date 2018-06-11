@@ -254,7 +254,6 @@ def main():
 
         sample_features_ext = sample_features.unsqueeze(0).repeat(BATCH_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
         batch_features_ext = batch_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
-
         batch_features_grid = batch_features_ext.view(-1, FEATURE_DIM, 5, 5)
         samples_features_grid = sample_features_ext.view(-1, FEATURE_DIM, 5, 5)
 
@@ -282,6 +281,7 @@ def main():
 
         torch.nn.utils.clip_grad_norm(feature_encoder.parameters(),0.5)
         torch.nn.utils.clip_grad_norm(relation_network.parameters(),0.5)
+        torch.nn.utils.clip_grad_norm(attention_module.parameters(),0.5)
 
         feature_encoder_optim.step()
         relation_network_optim.step()
@@ -314,6 +314,13 @@ def main():
                 # to form a 100x128 matrix for relation network
                 sample_features_ext = sample_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
                 test_features_ext = test_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
+                batch_features_grid = batch_features_ext.view(-1, FEATURE_DIM, 5, 5)
+                samples_features_grid = sample_features_ext.view(-1, FEATURE_DIM, 5, 5)
+
+                if args.attention:
+                    sample_features_ext = attention_module(samples_features_grid, batch_features_grid)
+                    sample_features_ext = sample_features_ext.view(BATCH_NUM_PER_CLASS*CLASS_NUM, -1, FEATURE_DIM, 5, 5)
+
                 test_features_ext = torch.transpose(test_features_ext,0,1)
 
                 relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,FEATURE_DIM*2,5,5)
