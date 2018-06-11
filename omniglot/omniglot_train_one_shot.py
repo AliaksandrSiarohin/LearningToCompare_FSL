@@ -29,7 +29,7 @@ parser.add_argument("-t","--test_episode", type = int, default = 1000)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
-parser.add_argument("-a", "--attention", type=int, default=0)
+parser.add_argument("-a", "--attention", type=int, default=1)
 
 
 args = parser.parse_args()
@@ -52,16 +52,15 @@ class AttentionModule(nn.Module):
     def __init__(self, in_filters=64, emb_filters=64):
         super(AttentionModule, self).__init__()
 
-        self.theta = nn.Conv2d(in_filters, emb_filters, kernel_size=1)
-        self.g = nn.Conv2d(in_filters, in_filters, kernel_size=1)
-        self.phi = nn.Conv2d(in_filters, emb_filters, kernel_size=1)
+        self.theta = nn.Conv2d(in_filters, emb_filters, kernel_size=1, bias=False)
+        self.g = nn.Conv2d(in_filters, in_filters, kernel_size=1, bias=False)
+        self.phi = nn.Conv2d(in_filters, emb_filters, kernel_size=1, bias=False)
 
     def forward(self, sample, batch):
         #Sample bs:in_filters:H_s:W_s
         #Batch bs:in_filters:H_b:W_b
 
         final_shape = batch.shape
-
         phi = self.phi(sample)
         # bs:emb_filters:H_s:W_s
         theta = self.theta(batch)
@@ -80,7 +79,8 @@ class AttentionModule(nn.Module):
 
         f = torch.matmul(theta, phi)
         # bs:H_b*W_b:H_s*W_s
-        f = F.softmax(f, dim=1)
+
+        f = F.softmax(f, dim=2)
         # bs:H_b*W_b:H_s*W_s
 
         g = g.permute(0, 2, 1)
@@ -89,7 +89,7 @@ class AttentionModule(nn.Module):
         out = torch.matmul(f, g)
         # bs:H_b*W_b:in_filter
         out = out.permute(0, 2, 1)
-        out = out.view(*final_shape)
+        out = out.contiguous().view(*final_shape)
 
         return out
 
@@ -164,7 +164,25 @@ def weights_init(m):
         m.weight.data.normal_(0, 0.01)
         m.bias.data = torch.ones(m.bias.data.size())
 
+def test_attention_module():
+    module = AttentionModule(2, 2)
+    module.phi.weight.data.fill_(1)
+    module.theta.weight.data.fill_(1)
+    module.g.weight.data.fill_(1)
+
+    sample = np.arange(1 * 2 * 3 * 4).reshape((1, 2, 3, 4)) / 100.0
+    batch = np.arange(1 * 2 * 5 * 6).reshape((1, 2, 5, 6)) / 100.0
+
+    sample = Variable(torch.from_numpy(sample.astype('float32')))
+    batch = Variable(torch.from_numpy(batch.astype('float32')))
+
+    print module(sample, batch).shape
+
+
 def main():
+    # test_attention_module()
+    # exit()
+
     # Step 1: init data folders
     print("init data folders")
     # init character folders for dataset construction
@@ -233,6 +251,7 @@ def main():
         # calculate relations
         # each batch sample link to every samples to calculate relations
         # to form a 100x128 matrix for relation network
+
         sample_features_ext = sample_features.unsqueeze(0).repeat(BATCH_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
         batch_features_ext = batch_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
 
@@ -241,6 +260,8 @@ def main():
 
         if args.attention:
             sample_features_ext = attention_module(samples_features_grid, batch_features_grid)
+            sample_features_ext = sample_features_ext.view(BATCH_NUM_PER_CLASS*CLASS_NUM, -1, FEATURE_DIM, 5, 5)
+
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
 
         relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,5,5)
