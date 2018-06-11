@@ -21,7 +21,7 @@ import random
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
 parser.add_argument("-f","--feature_dim",type = int, default=64)
 parser.add_argument("-r","--relation_dim",type = int, default=8)
-parser.add_argument("-w","--class_num",type = int, default=5)
+parser.add_argument("-w","--class_num",type = int, default=20)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 19)
 parser.add_argument("-e","--episode",type = int, default= 1000000)
@@ -49,7 +49,7 @@ HIDDEN_UNIT = args.hidden_unit
 
 
 class AttentionModule(nn.Module):
-    def __int__(self, in_filters=64, emb_filters=64):
+    def __init__(self, in_filters=64, emb_filters=64):
         super(AttentionModule, self).__init__()
 
         self.theta = nn.Conv2d(in_filters, emb_filters, kernel_size=1)
@@ -175,7 +175,7 @@ def main():
 
     feature_encoder = CNNEncoder()
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
-    attention_module = AttentionModule(FEATURE_DIM)
+    attention_module = AttentionModule(FEATURE_DIM, FEATURE_DIM)
 
     feature_encoder.apply(weights_init)
     relation_network.apply(weights_init)
@@ -239,7 +239,7 @@ def main():
         batch_features_grid = batch_features_ext.view(-1, FEATURE_DIM, 5, 5)
         samples_features_grid = sample_features_ext.view(-1, FEATURE_DIM, 5, 5)
 
-        if attention_module:
+        if args.attention:
             sample_features_ext = attention_module(samples_features_grid, batch_features_grid)
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
 
@@ -300,7 +300,7 @@ def main():
 
                 _,predict_labels = torch.max(relations.data,1)
 
-                rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(CLASS_NUM)]
+                rewards = [1 if predict_labels[j].cpu()==test_labels[j].cpu() else 0 for j in range(CLASS_NUM)]
 
                 total_rewards += np.sum(rewards)
 
