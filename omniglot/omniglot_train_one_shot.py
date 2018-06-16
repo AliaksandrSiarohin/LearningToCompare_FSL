@@ -322,8 +322,6 @@ def main():
                 samples_features_grid = sample_features_ext.contiguous().view(-1, FEATURE_DIM, 5, 5)
 
                 if args.attention:
-#                    print test_features_grid.shape
-#                    print samples_features_grid.shape
                     sample_features_ext = attention_module(samples_features_grid, test_features_grid)
                     sample_features_ext = sample_features_ext.view(SAMPLE_NUM_PER_CLASS*CLASS_NUM, -1, FEATURE_DIM, 5, 5)
 
