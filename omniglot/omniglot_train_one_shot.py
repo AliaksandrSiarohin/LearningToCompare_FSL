@@ -219,6 +219,10 @@ def main():
     if os.path.exists(str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
         relation_network.load_state_dict(torch.load(str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
         print("load relation network success")
+    if os.path.exists(str("./models/omniglot_attention_module_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+        attention_module.load_state_dict(torch.load(str("./models/omniglot_attention_module_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load attention module success")
+
 
     # Step 3: build graph
     print("Training...")
@@ -314,12 +318,14 @@ def main():
                 # to form a 100x128 matrix for relation network
                 sample_features_ext = sample_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
                 test_features_ext = test_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
-                batch_features_grid = batch_features_ext.view(-1, FEATURE_DIM, 5, 5)
-                samples_features_grid = sample_features_ext.view(-1, FEATURE_DIM, 5, 5)
+                test_features_grid = test_features_ext.contiguous().view(-1, FEATURE_DIM, 5, 5)
+                samples_features_grid = sample_features_ext.contiguous().view(-1, FEATURE_DIM, 5, 5)
 
                 if args.attention:
-                    sample_features_ext = attention_module(samples_features_grid, batch_features_grid)
-                    sample_features_ext = sample_features_ext.view(BATCH_NUM_PER_CLASS*CLASS_NUM, -1, FEATURE_DIM, 5, 5)
+#                    print test_features_grid.shape
+#                    print samples_features_grid.shape
+                    sample_features_ext = attention_module(samples_features_grid, test_features_grid)
+                    sample_features_ext = sample_features_ext.view(SAMPLE_NUM_PER_CLASS*CLASS_NUM, -1, FEATURE_DIM, 5, 5)
 
                 test_features_ext = torch.transpose(test_features_ext,0,1)
 
@@ -341,6 +347,8 @@ def main():
                 # save networks
                 torch.save(feature_encoder.state_dict(),str("./models/omniglot_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
                 torch.save(relation_network.state_dict(),str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                torch.save(attention_module.state_dict(),str("./models/omniglot_attention_module_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+
 
                 print("save networks for episode:",episode)
 

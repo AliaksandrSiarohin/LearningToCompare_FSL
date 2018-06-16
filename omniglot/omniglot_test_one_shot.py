@@ -23,7 +23,7 @@ import scipy.stats
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
 parser.add_argument("-f","--feature_dim",type = int, default = 64)
 parser.add_argument("-r","--relation_dim",type = int, default = 8)
-parser.add_argument("-w","--class_num",type = int, default = 5)
+parser.add_argument("-w","--class_num",type = int, default = 20)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 19)
 parser.add_argument("-e","--episode",type = int, default= 10)
@@ -185,7 +185,7 @@ def main():
 
                 _,predict_labels = torch.max(relations.data,1)
 
-                rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(CLASS_NUM)]
+                rewards = [1 if predict_labels[j].cpu()==test_labels[j].cpu() else 0 for j in range(CLASS_NUM)]
 
                 total_rewards += np.sum(rewards)
                 accuracy = np.sum(rewards)/1.0/CLASS_NUM/SAMPLE_NUM_PER_CLASS
